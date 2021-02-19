@@ -1,0 +1,138 @@
+---
+title: "Shiny Capstone Milestone Report"
+author: "Shannon Poskus"
+date: "February 15, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Progress Summary
+
+In the effort to create an application that uses machine learning to predict upcoming words in a sentence, I have used data taken from three different online sources - twitter, blogs, and news articles - to build a data set of English language words and n-gram relationships.  Once the data is in an easily disgestable format, it can then be compared and analyzed for trends and relationships that will make it possible to move forward with a predictive algorithm development
+
+## Data Cleaning
+
+The first step is to read in the data from raw text files and into data frames that can be easily worked with to generate statistical analysis.  During this step the data is also cleaned to remove punctuation, profanity, foreign words, and other terms that are not desired in the prediction process. 
+
+```{r, eval=FALSE}
+library(dplyr)
+library(tidytext)
+library(readr)
+library(data.table)
+
+# get the three text files of raw data
+file_twitter <- file("en_US.twitter.txt")
+file_blog <- file("en_US.blogs.txt")
+file_news <- file("en_US.news.txt")
+
+# read in the raw data line by line
+twitter_data <- read_lines(file_twitter, skip_empty_rows = TRUE)
+blog_data <- read_lines(file_blog, skip_empty_rows = TRUE)
+news_data <- read_lines(file_news, skip_empty_rows = TRUE)
+
+# a function to remove regex patterns from one vector from a second vector
+# used to clean the data of profanity and other unwanted words or phrases
+removalLoop <- function(patternsVector, dataVector) {
+    for (i in 1:length(patternsVector)) {
+        dataVector <- gsub(patternsVector[i], "", dataVector, ignore.case = TRUE)
+    }
+    dataVector
+}
+
+# apply the set of removal patterns to the raw data lines
+twitter_data <- removalLoop(removal_patterns, twitter_data)
+blog_data <- removalLoop(removal_patterns, blog_data)
+news_data <- removalLoop(removal_patterns, news_data)
+
+# create data frames of the raw data that records the line position and the source
+twitter_df <- tibble(line = 1:length(twitter_data), text = twitter_data, source = "twitter")
+blog_df <- tibble(line = 1:length(blog_data), text = blog_data, source = "blogs")
+news_df <- tibble(line = 1:length(news_data), text = news_data, source = "news")
+
+# combine the data into a single dataset 
+raw_df <- bind_rows(twitter_df, blog_df, news_df)
+
+# create statisical friendly data frames of the words, bigrams, and trigrams present in the data
+data_words <- raw_df %>% unnest_tokens(word, text)
+data_bigrams <- raw_df %>% unnest_tokens(bigram, text, token ="ngrams", n=2)
+data_bigrams <- data_bigrams %>% filter(!is.na(bigram))
+
+# trigrams are too big for a single file - do them separately
+twitter_data_trigrams <- twitter_df %>% unnest_tokens(trigram, text, 
+                                                      token ="ngrams", n=3)
+twitter_data_trigrams <- twitter_data_trigrams %>% filter(!is.na(trigram))
+blog_data_trigrams <- blog_df %>% unnest_tokens(trigram, text, 
+                                                      token ="ngrams", n=3)
+blog_data_trigrams <- blog_data_trigrams %>% filter(!is.na(trigram))
+news_data_trigrams <- news_df %>% unnest_tokens(trigram, text, 
+                                                      token ="ngrams", n=3)
+news_data_trigrams <- news_data_trigrams %>% filter(!is.na(trigram))
+```
+
+## Looking at the data
+
+Once the data is in a format that can have analysis run on it, it's time to look at the most common words and n-grams in the data, so here's the top 25 words, bigrams, and trigrams in the data.
+
+```{r, echo=FALSE, message=FALSE}
+library(dplyr)
+library(tidytext)
+library(readr)
+library(data.table)
+library(ggplot2)
+
+# get clean data from file
+file_word_count <- file("word_count.txt")
+file_word_count_tot <- file("word_count_tot.txt")
+file_bigram_count <- file("bigram_count.txt")
+file_bigram_count_tot <- file("bigram_count_tot.txt")
+file_trigram_count <- file("trigram_count.txt")
+file_trigram_count_tot <- file("trigram_count_tot.txt")
+
+word_count <- read_delim(file_word_count, "|")
+word_count_tot <- read_delim(file_word_count_tot, "|")
+bigram_count <- read_delim(file_bigram_count, "|")
+bigram_count_tot <- read_delim(file_bigram_count_tot, "|")
+trigram_count <- read_delim(file_trigram_count, "|")
+trigram_count <- trigram_count %>% arrange(desc(n))
+trigram_count_tot <- read_delim(file_trigram_count_tot, "|")
+trigram_count_tot <- trigram_count_tot %>% arrange(desc(n))
+
+# make histograms of top 25
+word_histo <- word_count_tot %>% slice(1:25) %>% ggplot(aes(n, word)) + 
+    geom_col(color = "black", fill = "dark red") + labs(y = NULL)
+bigram_histo <- bigram_count_tot %>% slice(1:25) %>% ggplot(aes(n, bigram)) + 
+    geom_col(color = "black", fill = "dark blue") + labs(y = NULL)
+trigram_histo <- trigram_count_tot %>% slice(1:25) %>% ggplot(aes(n, trigram)) + 
+    geom_col(color = "black", fill = "dark green") + labs(y = NULL)
+
+# plot the charts
+word_histo
+```
+
+Here's a histogram of the top 25 used words in the dataset, and you can see a lot of pronouns, prepositions, and conjunctions which is pretty much expected, as these are some of the most common words in the English language. The word "the" is far away the most common with over 4.5 million occurances in the dataset.
+
+```{r, echo = FALSE}
+bigram_histo
+```
+
+The histogram of the bigrams is quite similar to the words histogram, with "on the" and "in the" being the top two bigrams with over 400 thousand results each.
+
+```{r, echo = FALSE}
+trigram_histo
+```
+
+The trigram histogram is where we start to see some common English phrasing "one of the" is the standout one here with over 30,000 results.
+
+Overall the results of the counts is not unexpected, but the sheer size of the dataset makes it difficult to process, especially when it came to generating the trigrams.  If this application is to be usefully, the model and dataset will have to be reduced to a reasonable size so as not to cause issues with space or runtime.  Considering the size of the data set 
+
+```{r, echo = FALSE}
+ggplot(word_count_tot, aes(x=n)) + geom_histogram(fill = "blue violet", color = "black", bins = 50) + scale_x_log10()
+```
+
+Looking at the log scale of the counts, it is obvious that a vast majority of the data has a low rate of occurance and will not be very helpfull in modeling and predicting.  So to improve performance, I plan on using the top 5% of the n-gram data sets, which should still give me more than enough to test and build better prediction models without the computational load.
+
+The end goal is a predictive tool that is light and fast enough enough to be used on any computer while typing real time.  I hope to get it light enough to potentially be useful on a mobile device, but I would settle just for standard tablets and laptops running it easily.
